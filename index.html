@@ -3,13 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medieval Combat Arena - Ultimate Edition</title>
+    <title>Medieval Combat Arena - Polished Edition</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             background: #1a1a2e;
@@ -37,15 +33,16 @@
         }
 
         .health-container {
-            background: rgba(0, 0, 0, 0.7);
-            padding: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 12px;
             border-radius: 5px;
             color: white;
+            border: 2px solid #666;
         }
 
         .health-bar {
             width: 200px;
-            height: 20px;
+            height: 22px;
             background: #333;
             border: 2px solid #666;
             border-radius: 3px;
@@ -71,46 +68,20 @@
             font-weight: bold;
         }
 
-        #combo {
+        #combo, #clashText, #newWaveText {
             position: absolute;
-            top: 120px;
             left: 50%;
             transform: translateX(-50%);
-            font-size: 48px;
-            color: #ffaa00;
             text-shadow: 3px 3px 6px #000;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-
-        #clashText {
-            position: absolute;
-            top: 180px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 64px;
-            color: #ffff00;
-            text-shadow: 3px 3px 6px #000;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.2s;
-            font-weight: bold;
-        }
-
-        #newWaveText {
-            position: absolute;
-            top: 250px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 56px;
-            color: #ff0000;
-            text-shadow: 4px 4px 8px #000;
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.3s;
             font-weight: bold;
         }
+
+        #combo { top: 120px; font-size: 48px; color: #ffaa00; }
+        #clashText { top: 180px; font-size: 64px; color: #ffff00; }
+        #newWaveText { top: 250px; font-size: 56px; color: #ff0000; }
 
         #endScreen {
             position: absolute;
@@ -124,14 +95,10 @@
             text-align: center;
             display: none;
             pointer-events: all;
+            border: 3px solid #8b4513;
         }
 
-        #endScreen h1 {
-            font-size: 48px;
-            margin-bottom: 20px;
-            text-shadow: 2px 2px 4px #000;
-        }
-
+        #endScreen h1 { font-size: 48px; margin-bottom: 20px; }
         #endScreen button {
             margin-top: 20px;
             padding: 15px 30px;
@@ -143,21 +110,19 @@
             cursor: pointer;
             font-family: 'Courier New', monospace;
         }
-
-        #endScreen button:hover {
-            background: #a0522d;
-        }
+        #endScreen button:hover { background: #a0522d; }
 
         #controls {
             position: absolute;
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
             padding: 15px;
             border-radius: 5px;
             color: white;
             font-size: 14px;
+            border: 2px solid #666;
         }
     </style>
 </head>
@@ -191,7 +156,7 @@
     </div>
 
     <div id="controls">
-        A/D: Move | Left Click: Light Attack | Right Click: Heavy Attack | Space: BLOCK | Survive the waves!
+        A/D: Move | Left Click: Light | Right Click: Heavy | Space: BLOCK
     </div>
 
     <script>
@@ -209,7 +174,8 @@
         let newWaveTimer = 0;
 
         const particles = [];
-        const bloodSplatters = []; // Blood persists across ALL waves!
+        const bloodSplatters = [];
+        const bloodDrops = []; // Individual blood drops on characters
 
         class Particle {
             constructor(x, y, vx, vy, color, life, size = 3) {
@@ -245,12 +211,12 @@
                 this.alpha = 0.8;
                 this.isWall = isWall;
                 this.drops = [];
-                const dropCount = isWall ? 8 : 10;
+                const dropCount = isWall ? 10 : 15;
                 for (let i = 0; i < dropCount; i++) {
                     this.drops.push({
-                        offsetX: (Math.random() - 0.5) * (isWall ? 15 : 30),
-                        offsetY: isWall ? Math.random() * 30 : (Math.random() - 0.5) * 30,
-                        size: 2 + Math.random() * 5
+                        offsetX: (Math.random() - 0.5) * (isWall ? 20 : 40),
+                        offsetY: isWall ? Math.random() * 40 : (Math.random() - 0.5) * 40,
+                        size: 2 + Math.random() * 6
                     });
                 }
             }
@@ -275,20 +241,19 @@
                 this.y = 450;
                 this.vx = 0;
                 this.vy = 0;
-                this.width = 25; // Slimmer!
-                this.height = 90; // Taller!
+                this.width = 30;
+                this.height = 90;
                 this.health = 100;
                 this.maxHealth = 100;
                 this.isPlayer = isPlayer;
                 this.facingRight = isPlayer;
-                this.bloodLevel = 0;
+                this.bloodDrops = []; // Individual blood drops on this character
 
                 this.attacking = false;
                 this.attackType = 'light';
                 this.attackFrame = 0;
                 this.attackMaxFrames = 0;
                 this.weaponAngle = 0;
-                this.weaponTargetAngle = 0;
                 this.recovering = false;
                 this.recoveryFrame = 0;
 
@@ -301,7 +266,8 @@
 
                 this.aiTimer = 0;
                 this.aiAction = null;
-                this.aiDifficulty = 0.6 + (waveNumber * 0.05); // Gets harder each wave!
+                this.aiDifficulty = 0.75 + (waveNumber * 0.03);
+                this.aiAggressiveness = 0.5 + (waveNumber * 0.05); // NEW: More aggressive
             }
 
             startAttack(type) {
@@ -321,6 +287,17 @@
 
             stopBlock() {
                 this.blocking = false;
+            }
+
+            addBlood(amount) {
+                // Add individual blood drops to this character
+                for (let i = 0; i < amount; i++) {
+                    this.bloodDrops.push({
+                        x: (Math.random() - 0.5) * this.width,
+                        y: Math.random() * this.height,
+                        size: 1 + Math.random() * 2
+                    });
+                }
             }
 
             update(other) {
@@ -373,7 +350,7 @@
                         this.weaponAngle = startAngle + (endAngle - startAngle) * eased;
 
                         this.leanAngle = 0.2 * eased;
-                        this.armExtend = 20 * eased;
+                        this.armExtend = 22 * eased;
 
                         if (this.attackFrame === Math.floor(this.attackMaxFrames * 0.5) && !this.recovering) {
                             this.checkHit(other);
@@ -382,7 +359,7 @@
                     else {
                         const progress = (this.attackFrame - this.attackMaxFrames * 0.7) / (this.attackMaxFrames * 0.3);
                         this.leanAngle = 0.2 * (1 - progress);
-                        this.armExtend = 20 * (1 - progress);
+                        this.armExtend = 22 * (1 - progress);
                     }
 
                     if (this.attackFrame >= this.attackMaxFrames) {
@@ -397,7 +374,7 @@
 
                 if (this.recovering) {
                     this.recoveryFrame++;
-                    if (this.recoveryFrame > 15) {
+                    if (this.recoveryFrame > 12) { // Faster recovery
                         this.recovering = false;
                     }
                 }
@@ -427,7 +404,7 @@
             checkHit(other) {
                 if (!other) return;
 
-                const weaponReach = 60;
+                const weaponReach = 65;
                 const weaponX = this.x + (this.facingRight ? weaponReach : -weaponReach);
                 const dist = Math.abs(weaponX - other.x);
 
@@ -436,64 +413,67 @@
                     return;
                 }
 
-                if (other.blocking && dist < 70) {
+                if (other.blocking && dist < 75) {
                     this.triggerBlock(other);
                     return;
                 }
 
-                if (dist < 70) {
+                if (dist < 75) {
                     const damage = this.attackType === 'light' ? 12 : 20;
                     other.health -= damage;
-                    other.bloodLevel = Math.min(100, other.bloodLevel + damage * 2);
+                    other.addBlood(damage * 2); // Add blood drops to character
 
-                    const bloodCount = this.attackType === 'heavy' ? 60 : 40;
+                    // MASSIVE blood spray
+                    const bloodCount = this.attackType === 'heavy' ? 80 : 50;
                     for (let i = 0; i < bloodCount; i++) {
                         const angle = Math.random() * Math.PI * 2;
-                        const speed = 3 + Math.random() * 7;
+                        const speed = 4 + Math.random() * 8;
                         particles.push(new Particle(
                             other.x + (Math.random() - 0.5) * 30,
                             other.y + 30 + Math.random() * 40,
                             Math.cos(angle) * speed,
-                            Math.sin(angle) * speed - 4,
-                            '#' + ['8b0000', 'a00000', 'c00000', '800000'][Math.floor(Math.random() * 4)],
-                            40 + Math.random() * 20,
-                            2 + Math.random() * 3
+                            Math.sin(angle) * speed - 5,
+                            '#' + ['8b0000', 'a00000', 'c00000', '800000', '6b0000'][Math.floor(Math.random() * 5)],
+                            50 + Math.random() * 30,
+                            2 + Math.random() * 4
                         ));
                     }
 
-                    for (let i = 0; i < 3; i++) {
+                    // Floor blood
+                    for (let i = 0; i < 4; i++) {
                         bloodSplatters.push(new BloodSplatter(
-                            other.x + (Math.random() - 0.5) * 40,
-                            540 + Math.random() * 30,
+                            other.x + (Math.random() - 0.5) * 50,
+                            540 + Math.random() * 40,
                             false
                         ));
                     }
 
+                    // Wall blood
                     if (other.x < 200) {
-                        for (let i = 0; i < 2; i++) {
+                        for (let i = 0; i < 3; i++) {
                             bloodSplatters.push(new BloodSplatter(
-                                50 + Math.random() * 80,
-                                other.y + (Math.random() - 0.5) * 60,
+                                40 + Math.random() * 90,
+                                other.y + (Math.random() - 0.5) * 80,
                                 true
                             ));
                         }
                     } else if (other.x > 600) {
-                        for (let i = 0; i < 2; i++) {
+                        for (let i = 0; i < 3; i++) {
                             bloodSplatters.push(new BloodSplatter(
-                                670 + Math.random() * 80,
-                                other.y + (Math.random() - 0.5) * 60,
+                                660 + Math.random() * 90,
+                                other.y + (Math.random() - 0.5) * 80,
                                 true
                             ));
                         }
                     }
 
-                    other.vx = this.facingRight ? 10 : -10;
+                    other.vx = this.facingRight ? 12 : -12;
                     if (this.attackType === 'heavy') {
-                        other.vy = -5;
+                        other.vy = -6;
                     }
 
-                    screenShake = this.attackType === 'light' ? 5 : 12;
-                    freezeFrame = this.attackType === 'light' ? 3 : 6;
+                    screenShake = this.attackType === 'light' ? 6 : 15;
+                    freezeFrame = this.attackType === 'light' ? 4 : 8;
 
                     if (this.isPlayer) {
                         comboCount++;
@@ -504,10 +484,8 @@
 
                     if (other.health <= 0) {
                         if (!other.isPlayer) {
-                            // Enemy died! Spawn new wave
                             spawnNewWave();
                         } else {
-                            // Player died - game over
                             gameRunning = false;
                             endGame(false);
                         }
@@ -516,30 +494,30 @@
             }
 
             triggerClash(other) {
-                screenShake = 15;
-                freezeFrame = 8;
+                screenShake = 18;
+                freezeFrame = 10;
 
                 document.getElementById('clashText').style.opacity = '1';
-                clashTimer = 30;
+                clashTimer = 35;
 
                 const midX = (this.x + other.x) / 2;
                 const midY = (this.y + other.y) / 2 + 40;
-                for (let i = 0; i < 30; i++) {
+                for (let i = 0; i < 40; i++) {
                     const angle = Math.random() * Math.PI * 2;
-                    const speed = 4 + Math.random() * 7;
+                    const speed = 5 + Math.random() * 8;
                     particles.push(new Particle(
                         midX,
                         midY,
                         Math.cos(angle) * speed,
-                        Math.sin(angle) * speed - 2,
+                        Math.sin(angle) * speed - 3,
                         '#ff' + Math.floor(Math.random() * 100 + 155).toString(16) + '00',
-                        40,
-                        4
+                        45,
+                        5
                     ));
                 }
 
-                this.vx = this.facingRight ? -8 : 8;
-                other.vx = other.facingRight ? -8 : 8;
+                this.vx = this.facingRight ? -10 : 10;
+                other.vx = other.facingRight ? -10 : 10;
 
                 this.attacking = false;
                 this.recovering = true;
@@ -557,54 +535,57 @@
             }
 
             triggerBlock(other) {
-                screenShake = 8;
-                freezeFrame = 5;
+                screenShake = 10;
+                freezeFrame = 6;
 
                 document.getElementById('clashText').style.opacity = '1';
-                clashTimer = 20;
+                clashTimer = 25;
 
                 const blockX = other.x;
                 const blockY = other.y + 40;
-                for (let i = 0; i < 20; i++) {
+                for (let i = 0; i < 25; i++) {
                     const angle = Math.random() * Math.PI * 2;
-                    const speed = 3 + Math.random() * 5;
+                    const speed = 4 + Math.random() * 6;
                     particles.push(new Particle(
                         blockX,
                         blockY,
                         Math.cos(angle) * speed,
-                        Math.sin(angle) * speed - 2,
+                        Math.sin(angle) * speed - 3,
                         '#ffdd00',
-                        35,
-                        3
+                        40,
+                        4
                     ));
                 }
 
-                other.vx = other.facingRight ? -5 : 5;
-                other.blockStun = 10;
-                this.vx = this.facingRight ? -3 : 3;
+                other.vx = other.facingRight ? -6 : 6;
+                other.blockStun = 12;
+                this.vx = this.facingRight ? -4 : 4;
             }
 
             updateAI(player) {
                 this.aiTimer++;
                 const dist = Math.abs(this.x - player.x);
 
-                const reactionSpeed = Math.max(30, 40 - waveNumber * 2); // Faster each wave
+                // AGGRESSIVE AI - attacks way more often
+                const reactionSpeed = Math.max(25, 35 - waveNumber * 2);
                 if (this.aiTimer % reactionSpeed === 0) {
-                    if (dist < 120 && Math.random() > (1 - this.aiDifficulty - 0.1)) {
-                        this.aiAction = Math.random() > 0.5 ? 'heavy' : 'light';
-                    } else if (dist < 150 && player.attacking && Math.random() > (1 - this.aiDifficulty)) {
+                    const random = Math.random();
+
+                    if (dist < 150 && random > (1 - this.aiAggressiveness)) { // MUCH more aggressive
+                        this.aiAction = random > 0.6 ? 'heavy' : 'light';
+                    } else if (dist < 180 && player.attacking && random > (1 - this.aiDifficulty)) {
                         this.aiAction = 'block';
-                    } else if (dist > 250) {
+                    } else if (dist > 200) {
                         this.aiAction = 'approach';
-                    } else if (dist < 70 && !player.attacking) {
-                        this.aiAction = Math.random() > 0.5 ? 'retreat' : 'light';
+                    } else if (dist < 100 && !player.attacking && random > 0.3) { // Attack even when close
+                        this.aiAction = 'light';
                     }
                 }
 
                 if (this.aiAction === 'approach' && !this.attacking && !this.recovering && !this.blocking) {
-                    this.vx = this.x < player.x ? 2.5 : -2.5;
+                    this.vx = this.x < player.x ? 3 : -3;
                 } else if (this.aiAction === 'retreat' && !this.attacking && !this.recovering && !this.blocking) {
-                    this.vx = this.x < player.x ? -2.5 : 2.5;
+                    this.vx = this.x < player.x ? -2 : 2;
                 } else if (this.aiAction === 'light' || this.aiAction === 'heavy') {
                     this.startAttack(this.aiAction);
                     this.aiAction = null;
@@ -613,7 +594,7 @@
                     setTimeout(() => {
                         this.stopBlock();
                         this.aiAction = null;
-                    }, 200 + Math.random() * 400);
+                    }, 150 + Math.random() * 300);
                 }
             }
 
@@ -624,85 +605,119 @@
                 ctx.rotate(this.leanAngle);
                 ctx.translate(-this.x, -(this.y + this.height / 2));
 
-                // Blood overlay
-                if (this.bloodLevel > 0) {
-                    const bloodAlpha = Math.min(0.7, this.bloodLevel / 150);
-                    ctx.globalAlpha = bloodAlpha;
-                    ctx.fillStyle = '#8b0000';
-                    ctx.fillRect(this.x - this.width / 2, this.y - 30, this.width, this.height + 30);
-                    ctx.globalAlpha = 1;
+                // SILVER KNIGHT ARMOR
+                const armorColor = '#c0c0c0'; // Silver
+                const darkArmor = '#909090';
+                const lightArmor = '#e0e0e0';
+
+                // Torso - silver armor
+                ctx.fillStyle = armorColor;
+                ctx.fillRect(this.x - this.width / 2, this.y + 20, this.width, 50);
+
+                // Armor highlights
+                ctx.fillStyle = lightArmor;
+                ctx.fillRect(this.x - this.width / 2 + 2, this.y + 22, 4, 46);
+                ctx.fillRect(this.x + this.width / 2 - 6, this.y + 22, 4, 46);
+
+                // Armor plates lines
+                ctx.strokeStyle = darkArmor;
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 3; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(this.x - this.width / 2, this.y + 30 + i * 12);
+                    ctx.lineTo(this.x + this.width / 2, this.y + 30 + i * 12);
+                    ctx.stroke();
                 }
 
-                // LOW POLY KNIGHT BODY
-                const bodyColor = this.isPlayer ? '#3a5a7a' : '#7a3a3a';
+                // Shoulder pads - silver
+                ctx.fillStyle = armorColor;
+                ctx.fillRect(this.x - this.width / 2 - 5, this.y + 18, 10, 15);
+                ctx.fillRect(this.x + this.width / 2 - 5, this.y + 18, 10, 15);
 
-                // Torso (rectangular, slimmer)
-                ctx.fillStyle = bodyColor;
-                ctx.fillRect(this.x - this.width / 2, this.y + 20, this.width, this.height - 30);
-
-                // Shoulder pads (small rectangles)
-                ctx.fillStyle = this.isPlayer ? '#2a4a6a' : '#6a2a2a';
-                ctx.fillRect(this.x - this.width / 2 - 4, this.y + 18, 8, 12);
-                ctx.fillRect(this.x + this.width / 2 - 4, this.y + 18, 8, 12);
-
-                // Armor lines
-                ctx.strokeStyle = this.isPlayer ? '#2a4a6a' : '#6a2a2a';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(this.x - this.width / 2, this.y + 20, this.width, 15);
-                ctx.strokeRect(this.x - this.width / 2, this.y + 40, this.width, 15);
-                ctx.strokeRect(this.x - this.width / 2, this.y + 60, this.width, 15);
+                ctx.fillStyle = lightArmor;
+                ctx.fillRect(this.x - this.width / 2 - 4, this.y + 19, 3, 13);
+                ctx.fillRect(this.x + this.width / 2 - 2, this.y + 19, 3, 13);
 
                 // Belt
                 ctx.fillStyle = '#4a3a2a';
-                ctx.fillRect(this.x - this.width / 2, this.y + 55, this.width, 6);
+                ctx.fillRect(this.x - this.width / 2, this.y + 65, this.width, 8);
 
-                // Legs (simple rectangles)
-                ctx.fillStyle = this.isPlayer ? '#2a3a5a' : '#5a2a2a';
-                ctx.fillRect(this.x - 8, this.y + 75, 6, 35);
-                ctx.fillRect(this.x + 2, this.y + 75, 6, 35);
+                // Legs - dark metal
+                ctx.fillStyle = darkArmor;
+                ctx.fillRect(this.x - 9, this.y + 73, 7, 37);
+                ctx.fillRect(this.x + 2, this.y + 73, 7, 37);
 
-                // Head (smaller, more angular)
-                ctx.fillStyle = '#d4a574';
-                ctx.fillRect(this.x - 10, this.y - 5, 20, 22);
+                // Leg highlights
+                ctx.fillStyle = armorColor;
+                ctx.fillRect(this.x - 8, this.y + 74, 2, 35);
+                ctx.fillRect(this.x + 3, this.y + 74, 2, 35);
 
-                // Helmet (angular, low poly)
-                ctx.fillStyle = '#606060';
+                // HEAD - Silver helmet
+                ctx.fillStyle = armorColor;
+                ctx.fillRect(this.x - 12, this.y - 5, 24, 24);
+
+                // Helmet top - angular
+                ctx.fillStyle = lightArmor;
                 ctx.beginPath();
-                ctx.moveTo(this.x - 12, this.y - 5);
-                ctx.lineTo(this.x, this.y - 15);
-                ctx.lineTo(this.x + 12, this.y - 5);
-                ctx.lineTo(this.x - 12, this.y - 5);
+                ctx.moveTo(this.x - 13, this.y - 5);
+                ctx.lineTo(this.x, this.y - 16);
+                ctx.lineTo(this.x + 13, this.y - 5);
+                ctx.lineTo(this.x - 13, this.y - 5);
                 ctx.fill();
+
+                // Helmet shadow
+                ctx.fillStyle = darkArmor;
+                ctx.fillRect(this.x - 12, this.y + 8, 24, 3);
 
                 // Visor slit
                 ctx.fillStyle = '#000';
-                ctx.fillRect(this.x - 8, this.y + 5, 16, 3);
+                ctx.fillRect(this.x - 10, this.y + 5, 20, 4);
 
-                // Arms (thin lines/rectangles)
+                // BLOOD DROPS on character (not rectangle!)
+                if (this.bloodDrops.length > 0) {
+                    ctx.fillStyle = '#8b0000';
+                    this.bloodDrops.forEach(drop => {
+                        ctx.beginPath();
+                        ctx.arc(this.x + drop.x, this.y + 20 + drop.y, drop.size, 0, Math.PI * 2);
+                        ctx.fill();
+                    });
+                }
+
+                // Arm - silver gauntlet
                 const armX = this.x + (this.facingRight ? this.armExtend : -this.armExtend);
-                ctx.fillStyle = '#d4a574';
-                const armWidth = 5;
+                ctx.fillStyle = armorColor;
                 ctx.fillRect(
                     Math.min(this.x, armX + (this.facingRight ? 15 : -15)),
-                    this.y + 25,
+                    this.y + 28,
                     Math.abs(armX + (this.facingRight ? 15 : -15) - this.x),
-                    armWidth
+                    6
                 );
 
-                // Weapon
+                // SWORD - Silver blade
                 if (this.attacking || this.weaponAngle !== 0 || this.blocking) {
-                    const weaponLength = 55;
+                    const weaponLength = 60;
                     const weaponX = armX + (this.facingRight ? 15 : -15);
-                    const weaponY = this.y + 28;
+                    const weaponY = this.y + 31;
 
                     let drawAngle = this.weaponAngle;
                     if (this.blocking) {
                         drawAngle = -Math.PI / 2;
                     }
 
-                    // Blade (silver)
-                    ctx.strokeStyle = '#c0c0c0';
-                    ctx.lineWidth = 5;
+                    // Blade
+                    ctx.strokeStyle = '#e0e0e0';
+                    ctx.lineWidth = 6;
+                    ctx.beginPath();
+                    ctx.moveTo(weaponX, weaponY);
+                    ctx.lineTo(
+                        weaponX + Math.cos(drawAngle) * weaponLength,
+                        weaponY + Math.sin(drawAngle) * weaponLength
+                    );
+                    ctx.stroke();
+
+                    // Blade edge (lighter)
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 2;
                     ctx.beginPath();
                     ctx.moveTo(weaponX, weaponY);
                     ctx.lineTo(
@@ -713,8 +728,8 @@
 
                     // Trail
                     if (this.attacking && this.attackFrame > this.anticipation && this.attackFrame < this.attackMaxFrames * 0.7) {
-                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-                        ctx.lineWidth = 7;
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                        ctx.lineWidth = 8;
                         ctx.beginPath();
                         ctx.moveTo(weaponX, weaponY);
                         const trailAngle = this.weaponAngle + (this.facingRight ? -0.2 : 0.2);
@@ -727,14 +742,19 @@
 
                     // Hilt
                     ctx.fillStyle = '#8b4513';
-                    ctx.fillRect(weaponX - 4, weaponY - 2, 8, 10);
+                    ctx.fillRect(weaponX - 4, weaponY - 3, 8, 12);
 
-                    // Crossguard
-                    ctx.fillStyle = '#a0a0a0';
-                    ctx.fillRect(weaponX - 10, weaponY + 2, 20, 4);
+                    // Crossguard - silver
+                    ctx.fillStyle = armorColor;
+                    ctx.fillRect(weaponX - 12, weaponY + 3, 24, 5);
+
+                    // Pommel
+                    ctx.fillStyle = '#ffaa00';
+                    ctx.beginPath();
+                    ctx.arc(weaponX, weaponY - 8, 4, 0, Math.PI * 2);
+                    ctx.fill();
                 }
 
-                ctx.globalAlpha = 1;
                 ctx.restore();
             }
         }
@@ -746,26 +766,20 @@
             enemiesKilled++;
             waveNumber++;
 
-            // Show "NEW ENEMY!" text
             document.getElementById('newWaveText').textContent = 'WAVE ' + waveNumber + '!';
             document.getElementById('newWaveText').style.opacity = '1';
             newWaveTimer = 60;
 
-            // Update wave counter
             document.getElementById('waveCounter').textContent = 'WAVE ' + waveNumber;
 
-            // Spawn new enemy (blood stays!)
             enemy = new Character(600, false);
-
-            // Small heal for player (10 HP per wave)
-            player.health = Math.min(100, player.health + 10);
+            player.health = Math.min(100, player.health + 12); // More healing
         }
 
         const keys = {};
 
         window.addEventListener('keydown', (e) => {
             keys[e.key.toLowerCase()] = true;
-
             if (e.key === ' ' && gameRunning) {
                 e.preventDefault();
                 player.startBlock();
@@ -774,52 +788,84 @@
 
         window.addEventListener('keyup', (e) => {
             keys[e.key.toLowerCase()] = false;
-
-            if (e.key === ' ') {
-                player.stopBlock();
-            }
+            if (e.key === ' ') player.stopBlock();
         });
 
         canvas.addEventListener('mousedown', (e) => {
             if (!gameRunning) return;
-
-            if (e.button === 0) {
-                player.startAttack('light');
-            } else if (e.button === 2) {
-                player.startAttack('heavy');
-            }
+            if (e.button === 0) player.startAttack('light');
+            else if (e.button === 2) player.startAttack('heavy');
         });
 
         canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
         function drawBackground() {
+            // Sky gradient - prettier
             const gradient = ctx.createLinearGradient(0, 0, 0, 600);
-            gradient.addColorStop(0, '#2a3a5a');
-            gradient.addColorStop(1, '#4a5a7a');
+            gradient.addColorStop(0, '#2a4a6a');
+            gradient.addColorStop(0.5, '#3a5a7a');
+            gradient.addColorStop(1, '#4a6a8a');
             ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, 800, 600);
 
+            // Castle walls - more detailed
             ctx.fillStyle = '#5a5a5a';
             ctx.fillRect(0, 0, 150, 600);
             ctx.fillRect(650, 0, 150, 600);
 
-            ctx.fillStyle = '#4a4a4a';
-            for (let i = 0; i < 600; i += 80) {
-                ctx.fillRect(0, i, 150, 40);
-                ctx.fillRect(650, i, 150, 40);
+            // Wall highlights
+            ctx.fillStyle = '#6a6a6a';
+            ctx.fillRect(0, 0, 10, 600);
+            ctx.fillRect(790, 0, 10, 600);
+
+            // Castle bricks
+            ctx.strokeStyle = '#4a4a4a';
+            ctx.lineWidth = 2;
+            for (let y = 0; y < 600; y += 40) {
+                for (let x = 0; x < 150; x += 60) {
+                    ctx.strokeRect(x, y, 60, 40);
+                    ctx.strokeRect(650 + x, y, 60, 40);
+                }
             }
 
-            ctx.fillStyle = '#6a5a4a';
+            // Banners
+            ctx.fillStyle = '#8b0000';
+            ctx.fillRect(60, 50, 30, 80);
+            ctx.fillRect(710, 50, 30, 80);
+
+            ctx.fillStyle = '#ffaa00';
+            for (let i = 0; i < 3; i++) {
+                ctx.fillRect(65 + i * 7, 60 + i * 15, 20, 3);
+                ctx.fillRect(715 + i * 7, 60 + i * 15, 20, 3);
+            }
+
+            // Arena floor - stone tiles
+            ctx.fillStyle = '#7a6a5a';
             ctx.fillRect(0, 530, 800, 70);
 
-            ctx.strokeStyle = '#5a4a3a';
-            ctx.lineWidth = 2;
-            for (let i = 0; i < 800; i += 50) {
-                ctx.beginPath();
-                ctx.moveTo(i, 530);
-                ctx.lineTo(i, 600);
-                ctx.stroke();
+            // Floor tiles
+            ctx.strokeStyle = '#6a5a4a';
+            ctx.lineWidth = 3;
+            for (let y = 530; y < 600; y += 35) {
+                for (let x = 0; x < 800; x += 50) {
+                    ctx.strokeRect(x, y, 50, 35);
+                }
             }
+
+            // Floor cracks
+            ctx.strokeStyle = '#5a4a3a';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(200, 530);
+            ctx.lineTo(250, 550);
+            ctx.lineTo(280, 540);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(500, 540);
+            ctx.lineTo(550, 560);
+            ctx.lineTo(580, 550);
+            ctx.stroke();
         }
 
         function updateUI() {
@@ -846,7 +892,7 @@
             comboCount = 0;
             comboTimer = 0;
             particles.length = 0;
-            bloodSplatters.length = 0; // Clear blood on full restart
+            bloodSplatters.length = 0;
 
             gameRunning = true;
             document.getElementById('endScreen').style.display = 'none';
@@ -859,8 +905,8 @@
 
         function gameLoop() {
             if (gameRunning && !player.attacking && !player.recovering && !player.blocking) {
-                if (keys['a']) player.vx = -3;
-                if (keys['d']) player.vx = 3;
+                if (keys['a']) player.vx = -3.5;
+                if (keys['d']) player.vx = 3.5;
             }
 
             if (gameRunning) {
@@ -892,13 +938,9 @@
             }
 
             drawBackground();
-
-            // Blood persists across ALL waves!
             bloodSplatters.forEach(b => b.draw());
-
             player.draw();
             enemy.draw();
-
             particles.forEach(p => p.draw());
 
             ctx.restore();
