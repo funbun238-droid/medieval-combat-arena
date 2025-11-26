@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medieval Combat Arena</title>
+    <title>Medieval Combat Arena - Enhanced</title>
     <style>
         * {
             margin: 0;
@@ -70,6 +70,20 @@
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.3s;
+        }
+
+        #clashText {
+            position: absolute;
+            top: 150px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 64px;
+            color: #ffff00;
+            text-shadow: 3px 3px 6px #000;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-weight: bold;
         }
 
         #endScreen {
@@ -140,6 +154,7 @@
     </div>
 
     <div id="combo"></div>
+    <div id="clashText">CLASH!</div>
 
     <div id="endScreen">
         <h1 id="endTitle">VICTORY!</h1>
@@ -148,7 +163,7 @@
     </div>
 
     <div id="controls">
-        A/D: Move | Left Click: Light Attack | Right Click: Heavy Attack | Space: Dodge Roll
+        A/D: Move | Left Click: Light Attack | Right Click: Heavy Attack | Space: BLOCK
     </div>
 
     <script>
@@ -161,12 +176,14 @@
         let freezeFrame = 0;
         let comboCount = 0;
         let comboTimer = 0;
+        let clashTimer = 0;
 
         // Particle system
         const particles = [];
+        const bloodSplatters = [];
 
         class Particle {
-            constructor(x, y, vx, vy, color, life) {
+            constructor(x, y, vx, vy, color, life, size = 3) {
                 this.x = x;
                 this.y = y;
                 this.vx = vx;
@@ -174,19 +191,55 @@
                 this.color = color;
                 this.life = life;
                 this.maxLife = life;
+                this.size = size;
             }
 
             update() {
                 this.x += this.vx;
                 this.y += this.vy;
-                this.vy += 0.3; // gravity
+                this.vy += 0.3;
                 this.life--;
             }
 
             draw() {
                 const alpha = this.life / this.maxLife;
                 ctx.fillStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
-                ctx.fillRect(this.x, this.y, 3, 3);
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+            }
+        }
+
+        class BloodSplatter {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.life = 300;
+                this.alpha = 0.7;
+                this.drops = [];
+                for (let i = 0; i < 5; i++) {
+                    this.drops.push({
+                        offsetX: (Math.random() - 0.5) * 20,
+                        offsetY: (Math.random() - 0.5) * 20,
+                        size: 3 + Math.random() * 4
+                    });
+                }
+            }
+
+            update() {
+                this.life--;
+                if (this.life < 100) {
+                    this.alpha = this.life / 100 * 0.7;
+                }
+            }
+
+            draw() {
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = '#8b0000';
+                this.drops.forEach(drop => {
+                    ctx.beginPath();
+                    ctx.arc(this.x + drop.offsetX, this.y + drop.offsetY, drop.size, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.globalAlpha = 1;
             }
         }
 
@@ -214,15 +267,14 @@
                 this.recovering = false;
                 this.recoveryFrame = 0;
 
+                // Blocking
+                this.blocking = false;
+                this.blockStun = 0;
+
                 // Animation
                 this.anticipation = 0;
                 this.leanAngle = 0;
                 this.armExtend = 0;
-
-                // Dodge
-                this.dodging = false;
-                this.dodgeFrame = 0;
-                this.invulnerable = false;
 
                 // AI
                 this.aiTimer = 0;
@@ -230,7 +282,7 @@
             }
 
             startAttack(type) {
-                if (this.attacking || this.recovering || this.dodging) return;
+                if (this.attacking || this.recovering || this.blocking || this.blockStun > 0) return;
 
                 this.attacking = true;
                 this.attackType = type;
@@ -240,13 +292,13 @@
                 this.anticipation = type === 'heavy' ? 8 : 4;
             }
 
-            dodge() {
-                if (this.dodging || this.attacking || this.recovering) return;
+            startBlock() {
+                if (this.attacking || this.recovering || this.blockStun > 0) return;
+                this.blocking = true;
+            }
 
-                this.dodging = true;
-                this.dodgeFrame = 0;
-                this.invulnerable = true;
-                this.vx = this.facingRight ? 8 : -8;
+            stopBlock() {
+                this.blocking = false;
             }
 
             update(other) {
@@ -262,16 +314,19 @@
                     }
                 }
 
-                // Dodge
-                if (this.dodging) {
-                    this.dodgeFrame++;
-                    if (this.dodgeFrame > 20) {
-                        this.dodging = false;
-                        this.invulnerable = false;
-                        this.dodgeFrame = 0;
+                // Clash timer
+                if (clashTimer > 0) {
+                    clashTimer--;
+                    if (clashTimer === 0) {
+                        document.getElementById('clashText').style.opacity = '0';
                     }
-                    if (this.dodgeFrame > 10) {
-                        this.invulnerable = false;
+                }
+
+                // Block stun
+                if (this.blockStun > 0) {
+                    this.blockStun--;
+                    if (this.blockStun === 0) {
+                        this.blocking = false;
                     }
                 }
 
@@ -287,7 +342,6 @@
                     // Swing phase
                     else if (this.attackFrame <= this.attackMaxFrames * 0.7) {
                         const progress = (this.attackFrame - this.anticipation) / (this.attackMaxFrames * 0.7 - this.anticipation);
-                        // Easing function for smooth acceleration/deceleration
                         const eased = progress < 0.5 
                             ? 2 * progress * progress 
                             : 1 - Math.pow(-2 * progress + 2, 2) / 2;
@@ -359,15 +413,45 @@
             }
 
             checkHit(other) {
-                if (!other || other.invulnerable) return;
+                if (!other) return;
 
                 const weaponReach = 60;
                 const weaponX = this.x + (this.facingRight ? weaponReach : -weaponReach);
                 const dist = Math.abs(weaponX - other.x);
 
+                // Check for weapon clash (both attacking at same time)
+                if (other.attacking && Math.abs(this.attackFrame - other.attackFrame) < 5 && dist < 80) {
+                    this.triggerClash(other);
+                    return;
+                }
+
+                // Check if opponent is blocking
+                if (other.blocking && dist < 70) {
+                    this.triggerBlock(other);
+                    return;
+                }
+
                 if (dist < 70) {
                     const damage = this.attackType === 'light' ? 12 : 20;
                     other.health -= damage;
+
+                    // Blood particles
+                    for (let i = 0; i < (this.attackType === 'heavy' ? 20 : 12); i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const speed = 2 + Math.random() * 5;
+                        particles.push(new Particle(
+                            other.x,
+                            other.y + 40,
+                            Math.cos(angle) * speed,
+                            Math.sin(angle) * speed - 3,
+                            '#' + ['8b0000', 'a00000', 'c00000'][Math.floor(Math.random() * 3)],
+                            30,
+                            2 + Math.random() * 2
+                        ));
+                    }
+
+                    // Blood splatter
+                    bloodSplatters.push(new BloodSplatter(other.x, other.y + 40));
 
                     // Knockback
                     other.vx = this.facingRight ? 10 : -10;
@@ -387,26 +471,92 @@
                         document.getElementById('combo').style.opacity = '1';
                     }
 
-                    // Particles
-                    for (let i = 0; i < (this.attackType === 'heavy' ? 15 : 8); i++) {
-                        const angle = Math.random() * Math.PI * 2;
-                        const speed = 2 + Math.random() * 4;
-                        particles.push(new Particle(
-                            other.x,
-                            other.y + 40,
-                            Math.cos(angle) * speed,
-                            Math.sin(angle) * speed - 2,
-                            '#ff' + Math.floor(Math.random() * 100 + 100).toString(16) + '00',
-                            30
-                        ));
-                    }
-
                     // Check death
                     if (other.health <= 0) {
                         gameRunning = false;
                         endGame(this.isPlayer);
                     }
                 }
+            }
+
+            triggerClash(other) {
+                // Both weapons clash - no damage
+                screenShake = 15;
+                freezeFrame = 8;
+
+                // Show CLASH text
+                document.getElementById('clashText').style.opacity = '1';
+                clashTimer = 30;
+
+                // Spark particles
+                const midX = (this.x + other.x) / 2;
+                const midY = (this.y + other.y) / 2 + 40;
+                for (let i = 0; i < 25; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 3 + Math.random() * 6;
+                    particles.push(new Particle(
+                        midX,
+                        midY,
+                        Math.cos(angle) * speed,
+                        Math.sin(angle) * speed - 2,
+                        '#ff' + Math.floor(Math.random() * 100 + 155).toString(16) + '00',
+                        35,
+                        3
+                    ));
+                }
+
+                // Push both characters back
+                this.vx = this.facingRight ? -8 : 8;
+                other.vx = other.facingRight ? -8 : 8;
+
+                // Reset both attacks
+                this.attacking = false;
+                this.recovering = true;
+                this.recoveryFrame = 0;
+                this.weaponAngle = 0;
+                this.armExtend = 0;
+                this.leanAngle = 0;
+
+                other.attacking = false;
+                other.recovering = true;
+                other.recoveryFrame = 0;
+                other.weaponAngle = 0;
+                other.armExtend = 0;
+                other.leanAngle = 0;
+            }
+
+            triggerBlock(other) {
+                // Attack blocked - no damage
+                screenShake = 8;
+                freezeFrame = 5;
+
+                // Show CLASH text
+                document.getElementById('clashText').style.opacity = '1';
+                clashTimer = 20;
+
+                // Spark particles at block point
+                const blockX = other.x;
+                const blockY = other.y + 40;
+                for (let i = 0; i < 15; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 2 + Math.random() * 4;
+                    particles.push(new Particle(
+                        blockX,
+                        blockY,
+                        Math.cos(angle) * speed,
+                        Math.sin(angle) * speed - 2,
+                        '#ffdd00',
+                        30,
+                        2
+                    ));
+                }
+
+                // Blocker gets pushed back slightly
+                other.vx = other.facingRight ? -5 : 5;
+                other.blockStun = 10;
+
+                // Attacker gets slight recoil
+                this.vx = this.facingRight ? -3 : 3;
             }
 
             updateAI(player) {
@@ -418,26 +568,29 @@
                 if (this.aiTimer % 60 === 0) {
                     if (dist < 100 && Math.random() > 0.3) {
                         this.aiAction = Math.random() > 0.6 ? 'heavy' : 'light';
-                    } else if (dist < 150 && player.attacking && Math.random() > 0.5) {
-                        this.aiAction = 'dodge';
+                    } else if (dist < 150 && player.attacking && Math.random() > 0.4) {
+                        this.aiAction = 'block';
                     } else if (dist > 200) {
                         this.aiAction = 'approach';
-                    } else if (dist < 80) {
+                    } else if (dist < 80 && !player.attacking) {
                         this.aiAction = 'retreat';
                     }
                 }
 
                 // Execute action
-                if (this.aiAction === 'approach' && !this.attacking && !this.recovering) {
+                if (this.aiAction === 'approach' && !this.attacking && !this.recovering && !this.blocking) {
                     this.vx = this.x < player.x ? 2 : -2;
-                } else if (this.aiAction === 'retreat' && !this.attacking && !this.recovering) {
+                } else if (this.aiAction === 'retreat' && !this.attacking && !this.recovering && !this.blocking) {
                     this.vx = this.x < player.x ? -2 : 2;
                 } else if (this.aiAction === 'light' || this.aiAction === 'heavy') {
                     this.startAttack(this.aiAction);
                     this.aiAction = null;
-                } else if (this.aiAction === 'dodge') {
-                    this.dodge();
-                    this.aiAction = null;
+                } else if (this.aiAction === 'block') {
+                    this.startBlock();
+                    setTimeout(() => {
+                        this.stopBlock();
+                        this.aiAction = null;
+                    }, 300 + Math.random() * 500);
                 }
             }
 
@@ -449,13 +602,29 @@
                 ctx.rotate(this.leanAngle);
                 ctx.translate(-this.x, -(this.y + this.height / 2));
 
-                // Body
-                ctx.fillStyle = this.isPlayer ? '#3a5a7a' : '#7a3a3a';
-                if (this.invulnerable) {
-                    ctx.globalAlpha = 0.5 + Math.sin(this.dodgeFrame * 0.5) * 0.3;
+                // Body with armor texture
+                const bodyColor = this.isPlayer ? '#3a5a7a' : '#7a3a3a';
+                ctx.fillStyle = bodyColor;
+                ctx.fillRect(this.x - this.width / 2, this.y, this.width, this.height);
+
+                // Armor plates (horizontal lines for texture)
+                ctx.strokeStyle = this.isPlayer ? '#2a4a6a' : '#6a2a2a';
+                ctx.lineWidth = 2;
+                for (let i = 0; i < 4; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(this.x - this.width / 2, this.y + 20 + i * 15);
+                    ctx.lineTo(this.x + this.width / 2, this.y + 20 + i * 15);
+                    ctx.stroke();
                 }
 
-                ctx.fillRect(this.x - this.width / 2, this.y, this.width, this.height);
+                // Armor highlights
+                ctx.strokeStyle = this.isPlayer ? '#4a6a8a' : '#8a4a4a';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(this.x - this.width / 2 + 2, this.y + 2, this.width - 4, this.height - 4);
+
+                // Belt
+                ctx.fillStyle = '#4a3a2a';
+                ctx.fillRect(this.x - this.width / 2, this.y + 50, this.width, 8);
 
                 // Head
                 ctx.fillStyle = '#d4a574';
@@ -464,6 +633,11 @@
                 // Helmet
                 ctx.fillStyle = '#606060';
                 ctx.fillRect(this.x - 17, this.y - 25, 34, 8);
+
+                // Helmet detail
+                ctx.strokeStyle = '#707070';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(this.x - 16, this.y - 24, 32, 6);
 
                 // Visor
                 ctx.fillStyle = '#000';
@@ -479,22 +653,28 @@
                 ctx.stroke();
 
                 // Weapon (sword)
-                if (this.attacking || this.weaponAngle !== 0) {
+                if (this.attacking || this.weaponAngle !== 0 || this.blocking) {
                     const weaponLength = 50;
                     const weaponX = armX + (this.facingRight ? 15 : -15);
                     const weaponY = this.y + 40;
+
+                    // Blocking pose
+                    let drawAngle = this.weaponAngle;
+                    if (this.blocking) {
+                        drawAngle = this.facingRight ? Math.PI / 2 : Math.PI / 2;
+                    }
 
                     ctx.strokeStyle = '#c0c0c0';
                     ctx.lineWidth = 4;
                     ctx.beginPath();
                     ctx.moveTo(weaponX, weaponY);
                     ctx.lineTo(
-                        weaponX + Math.cos(this.weaponAngle) * weaponLength,
-                        weaponY + Math.sin(this.weaponAngle) * weaponLength
+                        weaponX + Math.cos(drawAngle) * weaponLength,
+                        weaponY + Math.sin(drawAngle) * weaponLength
                     );
                     ctx.stroke();
 
-                    // Weapon trail during fast motion
+                    // Weapon trail
                     if (this.attacking && this.attackFrame > this.anticipation && this.attackFrame < this.attackMaxFrames * 0.7) {
                         ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
                         ctx.lineWidth = 6;
@@ -511,6 +691,17 @@
                     // Hilt
                     ctx.fillStyle = '#8b4513';
                     ctx.fillRect(weaponX - 3, weaponY - 3, 6, 12);
+
+                    // Crossguard
+                    ctx.fillStyle = '#a0a0a0';
+                    ctx.fillRect(weaponX - 8, weaponY + 3, 16, 3);
+                }
+
+                // Blocking indicator
+                if (this.blocking) {
+                    ctx.strokeStyle = '#ffff00';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(this.x - this.width / 2 - 3, this.y - 3, this.width + 6, this.height + 6);
                 }
 
                 ctx.globalAlpha = 1;
@@ -530,20 +721,24 @@
 
             if (e.key === ' ' && gameRunning) {
                 e.preventDefault();
-                player.dodge();
+                player.startBlock();
             }
         });
 
         window.addEventListener('keyup', (e) => {
             keys[e.key.toLowerCase()] = false;
+
+            if (e.key === ' ') {
+                player.stopBlock();
+            }
         });
 
         canvas.addEventListener('mousedown', (e) => {
             if (!gameRunning) return;
 
-            if (e.button === 0) { // Left click
+            if (e.button === 0) {
                 player.startAttack('light');
-            } else if (e.button === 2) { // Right click
+            } else if (e.button === 2) {
                 player.startAttack('heavy');
             }
         });
@@ -552,30 +747,25 @@
 
         // Draw background
         function drawBackground() {
-            // Sky
             const gradient = ctx.createLinearGradient(0, 0, 0, 600);
             gradient.addColorStop(0, '#2a3a5a');
             gradient.addColorStop(1, '#4a5a7a');
             ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, 800, 600);
 
-            // Castle walls
             ctx.fillStyle = '#5a5a5a';
             ctx.fillRect(0, 0, 150, 600);
             ctx.fillRect(650, 0, 150, 600);
 
-            // Castle details
             ctx.fillStyle = '#4a4a4a';
             for (let i = 0; i < 600; i += 80) {
                 ctx.fillRect(0, i, 150, 40);
                 ctx.fillRect(650, i, 150, 40);
             }
 
-            // Ground
             ctx.fillStyle = '#6a5a4a';
             ctx.fillRect(0, 530, 800, 70);
 
-            // Ground tiles
             ctx.strokeStyle = '#5a4a3a';
             ctx.lineWidth = 2;
             for (let i = 0; i < 800; i += 50) {
@@ -586,13 +776,11 @@
             }
         }
 
-        // Update health bars
         function updateUI() {
             document.getElementById('playerHealth').style.width = Math.max(0, player.health) + '%';
             document.getElementById('enemyHealth').style.width = Math.max(0, enemy.health) + '%';
         }
 
-        // End game
         function endGame(playerWon) {
             document.getElementById('endTitle').textContent = playerWon ? 'VICTORY!' : 'DEFEAT!';
             document.getElementById('endTitle').style.color = playerWon ? '#4a4' : '#a44';
@@ -602,7 +790,6 @@
             document.getElementById('endScreen').style.display = 'block';
         }
 
-        // Restart game
         function restartGame() {
             player.health = 100;
             player.x = 200;
@@ -610,7 +797,8 @@
             player.vy = 0;
             player.attacking = false;
             player.recovering = false;
-            player.dodging = false;
+            player.blocking = false;
+            player.blockStun = 0;
 
             enemy.health = 100;
             enemy.x = 600;
@@ -618,16 +806,19 @@
             enemy.vy = 0;
             enemy.attacking = false;
             enemy.recovering = false;
-            enemy.dodging = false;
+            enemy.blocking = false;
+            enemy.blockStun = 0;
             enemy.aiTimer = 0;
 
             comboCount = 0;
             comboTimer = 0;
             particles.length = 0;
+            bloodSplatters.length = 0;
 
             gameRunning = true;
             document.getElementById('endScreen').style.display = 'none';
             document.getElementById('combo').style.opacity = '0';
+            document.getElementById('clashText').style.opacity = '0';
         }
 
         window.restartGame = restartGame;
@@ -635,7 +826,7 @@
         // Game loop
         function gameLoop() {
             // Handle input
-            if (gameRunning && !player.attacking && !player.recovering && !player.dodging) {
+            if (gameRunning && !player.attacking && !player.recovering && !player.blocking) {
                 if (keys['a']) player.vx = -3;
                 if (keys['d']) player.vx = 3;
             }
@@ -648,11 +839,17 @@
                     player.update(enemy);
                     enemy.update(player);
 
-                    // Update particles
                     for (let i = particles.length - 1; i >= 0; i--) {
                         particles[i].update();
                         if (particles[i].life <= 0) {
                             particles.splice(i, 1);
+                        }
+                    }
+
+                    for (let i = bloodSplatters.length - 1; i >= 0; i--) {
+                        bloodSplatters[i].update();
+                        if (bloodSplatters[i].life <= 0) {
+                            bloodSplatters.splice(i, 1);
                         }
                     }
                 }
@@ -663,7 +860,6 @@
             // Draw
             ctx.save();
 
-            // Screen shake
             if (screenShake > 0) {
                 ctx.translate(
                     (Math.random() - 0.5) * screenShake,
@@ -674,10 +870,12 @@
 
             drawBackground();
 
+            // Draw blood splatters
+            bloodSplatters.forEach(b => b.draw());
+
             player.draw();
             enemy.draw();
 
-            // Draw particles
             particles.forEach(p => p.draw());
 
             ctx.restore();
