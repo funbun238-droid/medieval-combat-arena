@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medieval Combat Arena</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            border: 4px solid #8b4513;
+            box-shadow: 0 0 30px rgba(139, 69, 19, 0.5);
+            cursor: crosshair;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            width: 800px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+        }
+
+        .health-container {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+        }
+
+        .health-bar {
+            width: 200px;
+            height: 20px;
+            background: #333;
+            border: 2px solid #666;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+
+        .health-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff0000, #ff6600);
+            transition: width 0.3s;
+        }
+
+        #combo {
+            position: absolute;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 48px;
+            color: #ffaa00;
+            text-shadow: 3px 3px 6px #000;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        #endScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px;
+            border-radius: 10px;
+            color: white;
+            text-align: center;
+            display: none;
+            pointer-events: all;
+        }
+
+        #endScreen h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px #000;
+        }
+
+        #endScreen button {
+            margin-top: 20px;
+            padding: 15px 30px;
+            font-size: 24px;
+            background: #8b4513;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+        }
+
+        #endScreen button:hover {
+            background: #a0522d;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 5px;
+            color: white;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <div id="ui">
+        <div class="health-container">
+            <div>KNIGHT</div>
+            <div class="health-bar">
+                <div class="health-fill" id="playerHealth" style="width: 100%"></div>
+            </div>
+        </div>
+        <div class="health-container">
+            <div>ENEMY</div>
+            <div class="health-bar">
+                <div class="health-fill" id="enemyHealth" style="width: 100%"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="combo"></div>
+
+    <div id="endScreen">
+        <h1 id="endTitle">VICTORY!</h1>
+        <p id="endStats"></p>
+        <button onclick="restartGame()">FIGHT AGAIN</button>
+    </div>
+
+    <div id="controls">
+        A/D: Move | Left Click: Light Attack | Right Click: Heavy Attack | Space: Dodge Roll
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game state
+        let gameRunning = true;
+        let screenShake = 0;
+        let freezeFrame = 0;
+        let comboCount = 0;
+        let comboTimer = 0;
+
+        // Particle system
+        const particles = [];
+
+        class Particle {
+            constructor(x, y, vx, vy, color, life) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.color = color;
+                this.life = life;
+                this.maxLife = life;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.3; // gravity
+                this.life--;
+            }
+
+            draw() {
+                const alpha = this.life / this.maxLife;
+                ctx.fillStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+                ctx.fillRect(this.x, this.y, 3, 3);
+            }
+        }
+
+        // Character class
+        class Character {
+            constructor(x, isPlayer) {
+                this.x = x;
+                this.y = 450;
+                this.vx = 0;
+                this.vy = 0;
+                this.width = 40;
+                this.height = 80;
+                this.health = 100;
+                this.maxHealth = 100;
+                this.isPlayer = isPlayer;
+                this.facingRight = isPlayer;
+
+                // Combat
+                this.attacking = false;
+                this.attackType = 'light';
+                this.attackFrame = 0;
+                this.attackMaxFrames = 0;
+                this.weaponAngle = 0;
+                this.weaponTargetAngle = 0;
+                this.recovering = false;
+                this.recoveryFrame = 0;
+
+                // Animation
+                this.anticipation = 0;
+                this.leanAngle = 0;
+                this.armExtend = 0;
+
+                // Dodge
+                this.dodging = false;
+                this.dodgeFrame = 0;
+                this.invulnerable = false;
+
+                // AI
+                this.aiTimer = 0;
+                this.aiAction = null;
+            }
+
+            startAttack(type) {
+                if (this.attacking || this.recovering || this.dodging) return;
+
+                this.attacking = true;
+                this.attackType = type;
+                this.attackFrame = 0;
+                this.attackMaxFrames = type === 'light' ? 20 : 30;
+                this.weaponTargetAngle = this.facingRight ? Math.PI : 0;
+                this.anticipation = type === 'heavy' ? 8 : 4;
+            }
+
+            dodge() {
+                if (this.dodging || this.attacking || this.recovering) return;
+
+                this.dodging = true;
+                this.dodgeFrame = 0;
+                this.invulnerable = true;
+                this.vx = this.facingRight ? 8 : -8;
+            }
+
+            update(other) {
+                // Freeze frame
+                if (freezeFrame > 0) return;
+
+                // Combo timer
+                if (comboTimer > 0) {
+                    comboTimer--;
+                    if (comboTimer === 0) {
+                        comboCount = 0;
+                        document.getElementById('combo').style.opacity = '0';
+                    }
+                }
+
+                // Dodge
+                if (this.dodging) {
+                    this.dodgeFrame++;
+                    if (this.dodgeFrame > 20) {
+                        this.dodging = false;
+                        this.invulnerable = false;
+                        this.dodgeFrame = 0;
+                    }
+                    if (this.dodgeFrame > 10) {
+                        this.invulnerable = false;
+                    }
+                }
+
+                // Attack animation
+                if (this.attacking) {
+                    this.attackFrame++;
+
+                    // Anticipation phase
+                    if (this.attackFrame <= this.anticipation) {
+                        this.leanAngle = -0.15 * (this.attackFrame / this.anticipation);
+                        this.weaponAngle = this.facingRight ? -Math.PI / 4 : Math.PI + Math.PI / 4;
+                    }
+                    // Swing phase
+                    else if (this.attackFrame <= this.attackMaxFrames * 0.7) {
+                        const progress = (this.attackFrame - this.anticipation) / (this.attackMaxFrames * 0.7 - this.anticipation);
+                        // Easing function for smooth acceleration/deceleration
+                        const eased = progress < 0.5 
+                            ? 2 * progress * progress 
+                            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+                        const startAngle = this.facingRight ? -Math.PI / 4 : Math.PI + Math.PI / 4;
+                        const endAngle = this.facingRight ? Math.PI + Math.PI / 4 : -Math.PI / 4;
+                        this.weaponAngle = startAngle + (endAngle - startAngle) * eased;
+
+                        this.leanAngle = 0.2 * eased;
+                        this.armExtend = 20 * eased;
+
+                        // Hit detection at peak of swing
+                        if (this.attackFrame === Math.floor(this.attackMaxFrames * 0.5) && !this.recovering) {
+                            this.checkHit(other);
+                        }
+                    }
+                    // Follow-through phase
+                    else {
+                        const progress = (this.attackFrame - this.attackMaxFrames * 0.7) / (this.attackMaxFrames * 0.3);
+                        this.leanAngle = 0.2 * (1 - progress);
+                        this.armExtend = 20 * (1 - progress);
+                    }
+
+                    if (this.attackFrame >= this.attackMaxFrames) {
+                        this.attacking = false;
+                        this.recovering = true;
+                        this.recoveryFrame = 0;
+                        this.leanAngle = 0;
+                        this.armExtend = 0;
+                        this.weaponAngle = 0;
+                    }
+                }
+
+                // Recovery
+                if (this.recovering) {
+                    this.recoveryFrame++;
+                    if (this.recoveryFrame > 15) {
+                        this.recovering = false;
+                    }
+                }
+
+                // Movement
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Friction
+                this.vx *= 0.85;
+
+                // Gravity
+                if (this.y < 450) {
+                    this.vy += 0.8;
+                } else {
+                    this.y = 450;
+                    this.vy = 0;
+                }
+
+                // Bounds
+                this.x = Math.max(50, Math.min(750, this.x));
+
+                // Update facing direction
+                if (!this.attacking && other) {
+                    this.facingRight = this.x < other.x;
+                }
+
+                // AI behavior
+                if (!this.isPlayer && other) {
+                    this.updateAI(other);
+                }
+            }
+
+            checkHit(other) {
+                if (!other || other.invulnerable) return;
+
+                const weaponReach = 60;
+                const weaponX = this.x + (this.facingRight ? weaponReach : -weaponReach);
+                const dist = Math.abs(weaponX - other.x);
+
+                if (dist < 70) {
+                    const damage = this.attackType === 'light' ? 12 : 20;
+                    other.health -= damage;
+
+                    // Knockback
+                    other.vx = this.facingRight ? 10 : -10;
+                    if (this.attackType === 'heavy') {
+                        other.vy = -5;
+                    }
+
+                    // Hit effects
+                    screenShake = this.attackType === 'light' ? 5 : 12;
+                    freezeFrame = this.attackType === 'light' ? 3 : 6;
+
+                    // Combo
+                    if (this.isPlayer) {
+                        comboCount++;
+                        comboTimer = 120;
+                        document.getElementById('combo').textContent = comboCount + ' HIT COMBO!';
+                        document.getElementById('combo').style.opacity = '1';
+                    }
+
+                    // Particles
+                    for (let i = 0; i < (this.attackType === 'heavy' ? 15 : 8); i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const speed = 2 + Math.random() * 4;
+                        particles.push(new Particle(
+                            other.x,
+                            other.y + 40,
+                            Math.cos(angle) * speed,
+                            Math.sin(angle) * speed - 2,
+                            '#ff' + Math.floor(Math.random() * 100 + 100).toString(16) + '00',
+                            30
+                        ));
+                    }
+
+                    // Check death
+                    if (other.health <= 0) {
+                        gameRunning = false;
+                        endGame(this.isPlayer);
+                    }
+                }
+            }
+
+            updateAI(player) {
+                this.aiTimer++;
+
+                const dist = Math.abs(this.x - player.x);
+
+                // Decision making every 60 frames
+                if (this.aiTimer % 60 === 0) {
+                    if (dist < 100 && Math.random() > 0.3) {
+                        this.aiAction = Math.random() > 0.6 ? 'heavy' : 'light';
+                    } else if (dist < 150 && player.attacking && Math.random() > 0.5) {
+                        this.aiAction = 'dodge';
+                    } else if (dist > 200) {
+                        this.aiAction = 'approach';
+                    } else if (dist < 80) {
+                        this.aiAction = 'retreat';
+                    }
+                }
+
+                // Execute action
+                if (this.aiAction === 'approach' && !this.attacking && !this.recovering) {
+                    this.vx = this.x < player.x ? 2 : -2;
+                } else if (this.aiAction === 'retreat' && !this.attacking && !this.recovering) {
+                    this.vx = this.x < player.x ? -2 : 2;
+                } else if (this.aiAction === 'light' || this.aiAction === 'heavy') {
+                    this.startAttack(this.aiAction);
+                    this.aiAction = null;
+                } else if (this.aiAction === 'dodge') {
+                    this.dodge();
+                    this.aiAction = null;
+                }
+            }
+
+            draw() {
+                ctx.save();
+
+                // Lean
+                ctx.translate(this.x, this.y + this.height / 2);
+                ctx.rotate(this.leanAngle);
+                ctx.translate(-this.x, -(this.y + this.height / 2));
+
+                // Body
+                ctx.fillStyle = this.isPlayer ? '#3a5a7a' : '#7a3a3a';
+                if (this.invulnerable) {
+                    ctx.globalAlpha = 0.5 + Math.sin(this.dodgeFrame * 0.5) * 0.3;
+                }
+
+                ctx.fillRect(this.x - this.width / 2, this.y, this.width, this.height);
+
+                // Head
+                ctx.fillStyle = '#d4a574';
+                ctx.fillRect(this.x - 15, this.y - 20, 30, 20);
+
+                // Helmet
+                ctx.fillStyle = '#606060';
+                ctx.fillRect(this.x - 17, this.y - 25, 34, 8);
+
+                // Visor
+                ctx.fillStyle = '#000';
+                ctx.fillRect(this.x - 14, this.y - 15, 28, 3);
+
+                // Arms
+                const armX = this.x + (this.facingRight ? this.armExtend : -this.armExtend);
+                ctx.strokeStyle = '#d4a574';
+                ctx.lineWidth = 8;
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + 20);
+                ctx.lineTo(armX + (this.facingRight ? 15 : -15), this.y + 40);
+                ctx.stroke();
+
+                // Weapon (sword)
+                if (this.attacking || this.weaponAngle !== 0) {
+                    const weaponLength = 50;
+                    const weaponX = armX + (this.facingRight ? 15 : -15);
+                    const weaponY = this.y + 40;
+
+                    ctx.strokeStyle = '#c0c0c0';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.moveTo(weaponX, weaponY);
+                    ctx.lineTo(
+                        weaponX + Math.cos(this.weaponAngle) * weaponLength,
+                        weaponY + Math.sin(this.weaponAngle) * weaponLength
+                    );
+                    ctx.stroke();
+
+                    // Weapon trail during fast motion
+                    if (this.attacking && this.attackFrame > this.anticipation && this.attackFrame < this.attackMaxFrames * 0.7) {
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                        ctx.lineWidth = 6;
+                        ctx.beginPath();
+                        ctx.moveTo(weaponX, weaponY);
+                        const trailAngle = this.weaponAngle + (this.facingRight ? -0.3 : 0.3);
+                        ctx.lineTo(
+                            weaponX + Math.cos(trailAngle) * weaponLength,
+                            weaponY + Math.sin(trailAngle) * weaponLength
+                        );
+                        ctx.stroke();
+                    }
+
+                    // Hilt
+                    ctx.fillStyle = '#8b4513';
+                    ctx.fillRect(weaponX - 3, weaponY - 3, 6, 12);
+                }
+
+                ctx.globalAlpha = 1;
+                ctx.restore();
+            }
+        }
+
+        // Initialize characters
+        const player = new Character(200, true);
+        const enemy = new Character(600, false);
+
+        // Input handling
+        const keys = {};
+
+        window.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+
+            if (e.key === ' ' && gameRunning) {
+                e.preventDefault();
+                player.dodge();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (!gameRunning) return;
+
+            if (e.button === 0) { // Left click
+                player.startAttack('light');
+            } else if (e.button === 2) { // Right click
+                player.startAttack('heavy');
+            }
+        });
+
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // Draw background
+        function drawBackground() {
+            // Sky
+            const gradient = ctx.createLinearGradient(0, 0, 0, 600);
+            gradient.addColorStop(0, '#2a3a5a');
+            gradient.addColorStop(1, '#4a5a7a');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 800, 600);
+
+            // Castle walls
+            ctx.fillStyle = '#5a5a5a';
+            ctx.fillRect(0, 0, 150, 600);
+            ctx.fillRect(650, 0, 150, 600);
+
+            // Castle details
+            ctx.fillStyle = '#4a4a4a';
+            for (let i = 0; i < 600; i += 80) {
+                ctx.fillRect(0, i, 150, 40);
+                ctx.fillRect(650, i, 150, 40);
+            }
+
+            // Ground
+            ctx.fillStyle = '#6a5a4a';
+            ctx.fillRect(0, 530, 800, 70);
+
+            // Ground tiles
+            ctx.strokeStyle = '#5a4a3a';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 800; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(i, 530);
+                ctx.lineTo(i, 600);
+                ctx.stroke();
+            }
+        }
+
+        // Update health bars
+        function updateUI() {
+            document.getElementById('playerHealth').style.width = Math.max(0, player.health) + '%';
+            document.getElementById('enemyHealth').style.width = Math.max(0, enemy.health) + '%';
+        }
+
+        // End game
+        function endGame(playerWon) {
+            document.getElementById('endTitle').textContent = playerWon ? 'VICTORY!' : 'DEFEAT!';
+            document.getElementById('endTitle').style.color = playerWon ? '#4a4' : '#a44';
+            document.getElementById('endStats').textContent = 
+                `Max Combo: ${comboCount} hits\n` +
+                `Final Health: ${Math.max(0, Math.floor(player.health))}%`;
+            document.getElementById('endScreen').style.display = 'block';
+        }
+
+        // Restart game
+        function restartGame() {
+            player.health = 100;
+            player.x = 200;
+            player.vx = 0;
+            player.vy = 0;
+            player.attacking = false;
+            player.recovering = false;
+            player.dodging = false;
+
+            enemy.health = 100;
+            enemy.x = 600;
+            enemy.vx = 0;
+            enemy.vy = 0;
+            enemy.attacking = false;
+            enemy.recovering = false;
+            enemy.dodging = false;
+            enemy.aiTimer = 0;
+
+            comboCount = 0;
+            comboTimer = 0;
+            particles.length = 0;
+
+            gameRunning = true;
+            document.getElementById('endScreen').style.display = 'none';
+            document.getElementById('combo').style.opacity = '0';
+        }
+
+        window.restartGame = restartGame;
+
+        // Game loop
+        function gameLoop() {
+            // Handle input
+            if (gameRunning && !player.attacking && !player.recovering && !player.dodging) {
+                if (keys['a']) player.vx = -3;
+                if (keys['d']) player.vx = 3;
+            }
+
+            // Update
+            if (gameRunning) {
+                if (freezeFrame > 0) {
+                    freezeFrame--;
+                } else {
+                    player.update(enemy);
+                    enemy.update(player);
+
+                    // Update particles
+                    for (let i = particles.length - 1; i >= 0; i--) {
+                        particles[i].update();
+                        if (particles[i].life <= 0) {
+                            particles.splice(i, 1);
+                        }
+                    }
+                }
+
+                updateUI();
+            }
+
+            // Draw
+            ctx.save();
+
+            // Screen shake
+            if (screenShake > 0) {
+                ctx.translate(
+                    (Math.random() - 0.5) * screenShake,
+                    (Math.random() - 0.5) * screenShake
+                );
+                screenShake--;
+            }
+
+            drawBackground();
+
+            player.draw();
+            enemy.draw();
+
+            // Draw particles
+            particles.forEach(p => p.draw());
+
+            ctx.restore();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
