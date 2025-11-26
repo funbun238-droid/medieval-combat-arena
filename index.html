@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medieval Combat Arena - Enhanced</title>
+    <title>Medieval Combat Arena - Brutal Edition</title>
     <style>
         * {
             margin: 0;
@@ -170,7 +170,6 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        // Game state
         let gameRunning = true;
         let screenShake = 0;
         let freezeFrame = 0;
@@ -178,7 +177,6 @@
         let comboTimer = 0;
         let clashTimer = 0;
 
-        // Particle system
         const particles = [];
         const bloodSplatters = [];
 
@@ -209,26 +207,25 @@
         }
 
         class BloodSplatter {
-            constructor(x, y) {
+            constructor(x, y, isWall = false) {
                 this.x = x;
                 this.y = y;
-                this.life = 300;
-                this.alpha = 0.7;
+                this.life = 99999; // Never fade
+                this.alpha = 0.8;
+                this.isWall = isWall;
                 this.drops = [];
-                for (let i = 0; i < 5; i++) {
+                const dropCount = isWall ? 8 : 10;
+                for (let i = 0; i < dropCount; i++) {
                     this.drops.push({
-                        offsetX: (Math.random() - 0.5) * 20,
-                        offsetY: (Math.random() - 0.5) * 20,
-                        size: 3 + Math.random() * 4
+                        offsetX: (Math.random() - 0.5) * (isWall ? 15 : 30),
+                        offsetY: isWall ? Math.random() * 30 : (Math.random() - 0.5) * 30,
+                        size: 2 + Math.random() * 5
                     });
                 }
             }
 
             update() {
-                this.life--;
-                if (this.life < 100) {
-                    this.alpha = this.life / 100 * 0.7;
-                }
+                // Blood stays forever
             }
 
             draw() {
@@ -243,7 +240,6 @@
             }
         }
 
-        // Character class
         class Character {
             constructor(x, isPlayer) {
                 this.x = x;
@@ -256,8 +252,8 @@
                 this.maxHealth = 100;
                 this.isPlayer = isPlayer;
                 this.facingRight = isPlayer;
+                this.bloodLevel = 0; // How bloody the character is
 
-                // Combat
                 this.attacking = false;
                 this.attackType = 'light';
                 this.attackFrame = 0;
@@ -267,18 +263,16 @@
                 this.recovering = false;
                 this.recoveryFrame = 0;
 
-                // Blocking
                 this.blocking = false;
                 this.blockStun = 0;
 
-                // Animation
                 this.anticipation = 0;
                 this.leanAngle = 0;
                 this.armExtend = 0;
 
-                // AI
                 this.aiTimer = 0;
                 this.aiAction = null;
+                this.aiDifficulty = 0.7; // Higher = harder (0.7 = 70% reaction rate)
             }
 
             startAttack(type) {
@@ -288,7 +282,6 @@
                 this.attackType = type;
                 this.attackFrame = 0;
                 this.attackMaxFrames = type === 'light' ? 20 : 30;
-                this.weaponTargetAngle = this.facingRight ? Math.PI : 0;
                 this.anticipation = type === 'heavy' ? 8 : 4;
             }
 
@@ -302,10 +295,8 @@
             }
 
             update(other) {
-                // Freeze frame
                 if (freezeFrame > 0) return;
 
-                // Combo timer
                 if (comboTimer > 0) {
                     comboTimer--;
                     if (comboTimer === 0) {
@@ -314,7 +305,6 @@
                     }
                 }
 
-                // Clash timer
                 if (clashTimer > 0) {
                     clashTimer--;
                     if (clashTimer === 0) {
@@ -322,7 +312,6 @@
                     }
                 }
 
-                // Block stun
                 if (this.blockStun > 0) {
                     this.blockStun--;
                     if (this.blockStun === 0) {
@@ -330,35 +319,33 @@
                     }
                 }
 
-                // Attack animation
                 if (this.attacking) {
                     this.attackFrame++;
 
-                    // Anticipation phase
+                    // Anticipation - sword raised HIGH
                     if (this.attackFrame <= this.anticipation) {
                         this.leanAngle = -0.15 * (this.attackFrame / this.anticipation);
-                        this.weaponAngle = this.facingRight ? -Math.PI / 4 : Math.PI + Math.PI / 4;
+                        this.weaponAngle = this.facingRight ? -Math.PI * 0.6 : Math.PI + Math.PI * 0.6; // Up high
                     }
-                    // Swing phase
+                    // Swing phase - DOWN to horizontal
                     else if (this.attackFrame <= this.attackMaxFrames * 0.7) {
                         const progress = (this.attackFrame - this.anticipation) / (this.attackMaxFrames * 0.7 - this.anticipation);
                         const eased = progress < 0.5 
                             ? 2 * progress * progress 
                             : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
-                        const startAngle = this.facingRight ? -Math.PI / 4 : Math.PI + Math.PI / 4;
-                        const endAngle = this.facingRight ? Math.PI + Math.PI / 4 : -Math.PI / 4;
+                        const startAngle = this.facingRight ? -Math.PI * 0.6 : Math.PI + Math.PI * 0.6; // High
+                        const endAngle = this.facingRight ? Math.PI * 0.1 : Math.PI - Math.PI * 0.1; // Horizontal/slightly down
                         this.weaponAngle = startAngle + (endAngle - startAngle) * eased;
 
                         this.leanAngle = 0.2 * eased;
                         this.armExtend = 20 * eased;
 
-                        // Hit detection at peak of swing
                         if (this.attackFrame === Math.floor(this.attackMaxFrames * 0.5) && !this.recovering) {
                             this.checkHit(other);
                         }
                     }
-                    // Follow-through phase
+                    // Follow-through
                     else {
                         const progress = (this.attackFrame - this.attackMaxFrames * 0.7) / (this.attackMaxFrames * 0.3);
                         this.leanAngle = 0.2 * (1 - progress);
@@ -375,7 +362,6 @@
                     }
                 }
 
-                // Recovery
                 if (this.recovering) {
                     this.recoveryFrame++;
                     if (this.recoveryFrame > 15) {
@@ -383,14 +369,10 @@
                     }
                 }
 
-                // Movement
                 this.x += this.vx;
                 this.y += this.vy;
-
-                // Friction
                 this.vx *= 0.85;
 
-                // Gravity
                 if (this.y < 450) {
                     this.vy += 0.8;
                 } else {
@@ -398,15 +380,12 @@
                     this.vy = 0;
                 }
 
-                // Bounds
                 this.x = Math.max(50, Math.min(750, this.x));
 
-                // Update facing direction
                 if (!this.attacking && other) {
                     this.facingRight = this.x < other.x;
                 }
 
-                // AI behavior
                 if (!this.isPlayer && other) {
                     this.updateAI(other);
                 }
@@ -419,13 +398,11 @@
                 const weaponX = this.x + (this.facingRight ? weaponReach : -weaponReach);
                 const dist = Math.abs(weaponX - other.x);
 
-                // Check for weapon clash (both attacking at same time)
                 if (other.attacking && Math.abs(this.attackFrame - other.attackFrame) < 5 && dist < 80) {
                     this.triggerClash(other);
                     return;
                 }
 
-                // Check if opponent is blocking
                 if (other.blocking && dist < 70) {
                     this.triggerBlock(other);
                     return;
@@ -434,36 +411,60 @@
                 if (dist < 70) {
                     const damage = this.attackType === 'light' ? 12 : 20;
                     other.health -= damage;
+                    other.bloodLevel = Math.min(100, other.bloodLevel + damage * 2);
 
-                    // Blood particles
-                    for (let i = 0; i < (this.attackType === 'heavy' ? 20 : 12); i++) {
+                    // MASSIVE blood particles (3x more!)
+                    const bloodCount = this.attackType === 'heavy' ? 60 : 40;
+                    for (let i = 0; i < bloodCount; i++) {
                         const angle = Math.random() * Math.PI * 2;
-                        const speed = 2 + Math.random() * 5;
+                        const speed = 3 + Math.random() * 7;
                         particles.push(new Particle(
-                            other.x,
-                            other.y + 40,
+                            other.x + (Math.random() - 0.5) * 30,
+                            other.y + 30 + Math.random() * 40,
                             Math.cos(angle) * speed,
-                            Math.sin(angle) * speed - 3,
-                            '#' + ['8b0000', 'a00000', 'c00000'][Math.floor(Math.random() * 3)],
-                            30,
-                            2 + Math.random() * 2
+                            Math.sin(angle) * speed - 4,
+                            '#' + ['8b0000', 'a00000', 'c00000', '800000'][Math.floor(Math.random() * 4)],
+                            40 + Math.random() * 20,
+                            2 + Math.random() * 3
                         ));
                     }
 
-                    // Blood splatter
-                    bloodSplatters.push(new BloodSplatter(other.x, other.y + 40));
+                    // Blood splatters on GROUND
+                    for (let i = 0; i < 3; i++) {
+                        bloodSplatters.push(new BloodSplatter(
+                            other.x + (Math.random() - 0.5) * 40,
+                            540 + Math.random() * 30,
+                            false
+                        ));
+                    }
 
-                    // Knockback
+                    // Blood splatters on WALLS
+                    if (other.x < 200) { // Near left wall
+                        for (let i = 0; i < 2; i++) {
+                            bloodSplatters.push(new BloodSplatter(
+                                50 + Math.random() * 80,
+                                other.y + (Math.random() - 0.5) * 60,
+                                true
+                            ));
+                        }
+                    } else if (other.x > 600) { // Near right wall
+                        for (let i = 0; i < 2; i++) {
+                            bloodSplatters.push(new BloodSplatter(
+                                670 + Math.random() * 80,
+                                other.y + (Math.random() - 0.5) * 60,
+                                true
+                            ));
+                        }
+                    }
+
                     other.vx = this.facingRight ? 10 : -10;
                     if (this.attackType === 'heavy') {
                         other.vy = -5;
                     }
 
-                    // Hit effects
                     screenShake = this.attackType === 'light' ? 5 : 12;
                     freezeFrame = this.attackType === 'light' ? 3 : 6;
 
-                    // Combo
                     if (this.isPlayer) {
                         comboCount++;
                         comboTimer = 120;
@@ -471,7 +472,6 @@
                         document.getElementById('combo').style.opacity = '1';
                     }
 
-                    // Check death
                     if (other.health <= 0) {
                         gameRunning = false;
                         endGame(this.isPlayer);
@@ -480,36 +480,31 @@
             }
 
             triggerClash(other) {
-                // Both weapons clash - no damage
                 screenShake = 15;
                 freezeFrame = 8;
 
-                // Show CLASH text
                 document.getElementById('clashText').style.opacity = '1';
                 clashTimer = 30;
 
-                // Spark particles
                 const midX = (this.x + other.x) / 2;
                 const midY = (this.y + other.y) / 2 + 40;
-                for (let i = 0; i < 25; i++) {
+                for (let i = 0; i < 30; i++) {
                     const angle = Math.random() * Math.PI * 2;
-                    const speed = 3 + Math.random() * 6;
+                    const speed = 4 + Math.random() * 7;
                     particles.push(new Particle(
                         midX,
                         midY,
                         Math.cos(angle) * speed,
                         Math.sin(angle) * speed - 2,
                         '#ff' + Math.floor(Math.random() * 100 + 155).toString(16) + '00',
-                        35,
-                        3
+                        40,
+                        4
                     ));
                 }
 
-                // Push both characters back
                 this.vx = this.facingRight ? -8 : 8;
                 other.vx = other.facingRight ? -8 : 8;
 
-                // Reset both attacks
                 this.attacking = false;
                 this.recovering = true;
                 this.recoveryFrame = 0;
@@ -526,62 +521,54 @@
             }
 
             triggerBlock(other) {
-                // Attack blocked - no damage
                 screenShake = 8;
                 freezeFrame = 5;
 
-                // Show CLASH text
                 document.getElementById('clashText').style.opacity = '1';
                 clashTimer = 20;
 
-                // Spark particles at block point
                 const blockX = other.x;
                 const blockY = other.y + 40;
-                for (let i = 0; i < 15; i++) {
+                for (let i = 0; i < 20; i++) {
                     const angle = Math.random() * Math.PI * 2;
-                    const speed = 2 + Math.random() * 4;
+                    const speed = 3 + Math.random() * 5;
                     particles.push(new Particle(
                         blockX,
                         blockY,
                         Math.cos(angle) * speed,
                         Math.sin(angle) * speed - 2,
                         '#ffdd00',
-                        30,
-                        2
+                        35,
+                        3
                     ));
                 }
 
-                // Blocker gets pushed back slightly
                 other.vx = other.facingRight ? -5 : 5;
                 other.blockStun = 10;
-
-                // Attacker gets slight recoil
                 this.vx = this.facingRight ? -3 : 3;
             }
 
             updateAI(player) {
                 this.aiTimer++;
-
                 const dist = Math.abs(this.x - player.x);
 
-                // Decision making every 60 frames
-                if (this.aiTimer % 60 === 0) {
-                    if (dist < 100 && Math.random() > 0.3) {
-                        this.aiAction = Math.random() > 0.6 ? 'heavy' : 'light';
-                    } else if (dist < 150 && player.attacking && Math.random() > 0.4) {
+                // HARDER AI - faster reactions
+                if (this.aiTimer % 40 === 0) { // Faster decision making (was 60)
+                    if (dist < 120 && Math.random() > (1 - this.aiDifficulty - 0.1)) { // More aggressive
+                        this.aiAction = Math.random() > 0.5 ? 'heavy' : 'light';
+                    } else if (dist < 150 && player.attacking && Math.random() > (1 - this.aiDifficulty)) {
                         this.aiAction = 'block';
-                    } else if (dist > 200) {
+                    } else if (dist > 250) {
                         this.aiAction = 'approach';
-                    } else if (dist < 80 && !player.attacking) {
-                        this.aiAction = 'retreat';
+                    } else if (dist < 70 && !player.attacking) {
+                        this.aiAction = Math.random() > 0.5 ? 'retreat' : 'light'; // Sometimes attack instead of retreat
                     }
                 }
 
-                // Execute action
                 if (this.aiAction === 'approach' && !this.attacking && !this.recovering && !this.blocking) {
-                    this.vx = this.x < player.x ? 2 : -2;
+                    this.vx = this.x < player.x ? 2.5 : -2.5; // Faster movement
                 } else if (this.aiAction === 'retreat' && !this.attacking && !this.recovering && !this.blocking) {
-                    this.vx = this.x < player.x ? -2 : 2;
+                    this.vx = this.x < player.x ? -2.5 : 2.5;
                 } else if (this.aiAction === 'light' || this.aiAction === 'heavy') {
                     this.startAttack(this.aiAction);
                     this.aiAction = null;
@@ -590,24 +577,30 @@
                     setTimeout(() => {
                         this.stopBlock();
                         this.aiAction = null;
-                    }, 300 + Math.random() * 500);
+                    }, 200 + Math.random() * 400); // Shorter blocks
                 }
             }
 
             draw() {
                 ctx.save();
 
-                // Lean
                 ctx.translate(this.x, this.y + this.height / 2);
                 ctx.rotate(this.leanAngle);
                 ctx.translate(-this.x, -(this.y + this.height / 2));
 
-                // Body with armor texture
+                // Blood overlay on character
+                if (this.bloodLevel > 0) {
+                    const bloodAlpha = Math.min(0.7, this.bloodLevel / 150);
+                    ctx.globalAlpha = bloodAlpha;
+                    ctx.fillStyle = '#8b0000';
+                    ctx.fillRect(this.x - this.width / 2, this.y - 25, this.width, this.height + 25);
+                    ctx.globalAlpha = 1;
+                }
+
                 const bodyColor = this.isPlayer ? '#3a5a7a' : '#7a3a3a';
                 ctx.fillStyle = bodyColor;
                 ctx.fillRect(this.x - this.width / 2, this.y, this.width, this.height);
 
-                // Armor plates (horizontal lines for texture)
                 ctx.strokeStyle = this.isPlayer ? '#2a4a6a' : '#6a2a2a';
                 ctx.lineWidth = 2;
                 for (let i = 0; i < 4; i++) {
@@ -617,33 +610,26 @@
                     ctx.stroke();
                 }
 
-                // Armor highlights
                 ctx.strokeStyle = this.isPlayer ? '#4a6a8a' : '#8a4a4a';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(this.x - this.width / 2 + 2, this.y + 2, this.width - 4, this.height - 4);
 
-                // Belt
                 ctx.fillStyle = '#4a3a2a';
                 ctx.fillRect(this.x - this.width / 2, this.y + 50, this.width, 8);
 
-                // Head
                 ctx.fillStyle = '#d4a574';
                 ctx.fillRect(this.x - 15, this.y - 20, 30, 20);
 
-                // Helmet
                 ctx.fillStyle = '#606060';
                 ctx.fillRect(this.x - 17, this.y - 25, 34, 8);
 
-                // Helmet detail
                 ctx.strokeStyle = '#707070';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(this.x - 16, this.y - 24, 32, 6);
 
-                // Visor
                 ctx.fillStyle = '#000';
                 ctx.fillRect(this.x - 14, this.y - 15, 28, 3);
 
-                // Arms
                 const armX = this.x + (this.facingRight ? this.armExtend : -this.armExtend);
                 ctx.strokeStyle = '#d4a574';
                 ctx.lineWidth = 8;
@@ -652,16 +638,16 @@
                 ctx.lineTo(armX + (this.facingRight ? 15 : -15), this.y + 40);
                 ctx.stroke();
 
-                // Weapon (sword)
+                // Weapon - blocking pose or attacking
                 if (this.attacking || this.weaponAngle !== 0 || this.blocking) {
                     const weaponLength = 50;
                     const weaponX = armX + (this.facingRight ? 15 : -15);
                     const weaponY = this.y + 40;
 
-                    // Blocking pose
                     let drawAngle = this.weaponAngle;
                     if (this.blocking) {
-                        drawAngle = this.facingRight ? Math.PI / 2 : Math.PI / 2;
+                        // Sword held vertically in front
+                        drawAngle = -Math.PI / 2; // Pointing straight up
                     }
 
                     ctx.strokeStyle = '#c0c0c0';
@@ -674,13 +660,12 @@
                     );
                     ctx.stroke();
 
-                    // Weapon trail
                     if (this.attacking && this.attackFrame > this.anticipation && this.attackFrame < this.attackMaxFrames * 0.7) {
                         ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
                         ctx.lineWidth = 6;
                         ctx.beginPath();
                         ctx.moveTo(weaponX, weaponY);
-                        const trailAngle = this.weaponAngle + (this.facingRight ? -0.3 : 0.3);
+                        const trailAngle = this.weaponAngle + (this.facingRight ? -0.2 : 0.2);
                         ctx.lineTo(
                             weaponX + Math.cos(trailAngle) * weaponLength,
                             weaponY + Math.sin(trailAngle) * weaponLength
@@ -688,20 +673,11 @@
                         ctx.stroke();
                     }
 
-                    // Hilt
                     ctx.fillStyle = '#8b4513';
                     ctx.fillRect(weaponX - 3, weaponY - 3, 6, 12);
 
-                    // Crossguard
                     ctx.fillStyle = '#a0a0a0';
                     ctx.fillRect(weaponX - 8, weaponY + 3, 16, 3);
-                }
-
-                // Blocking indicator
-                if (this.blocking) {
-                    ctx.strokeStyle = '#ffff00';
-                    ctx.lineWidth = 3;
-                    ctx.strokeRect(this.x - this.width / 2 - 3, this.y - 3, this.width + 6, this.height + 6);
                 }
 
                 ctx.globalAlpha = 1;
@@ -709,11 +685,9 @@
             }
         }
 
-        // Initialize characters
         const player = new Character(200, true);
         const enemy = new Character(600, false);
 
-        // Input handling
         const keys = {};
 
         window.addEventListener('keydown', (e) => {
@@ -745,7 +719,6 @@
 
         canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-        // Draw background
         function drawBackground() {
             const gradient = ctx.createLinearGradient(0, 0, 0, 600);
             gradient.addColorStop(0, '#2a3a5a');
@@ -799,6 +772,7 @@
             player.recovering = false;
             player.blocking = false;
             player.blockStun = 0;
+            player.bloodLevel = 0;
 
             enemy.health = 100;
             enemy.x = 600;
@@ -809,6 +783,7 @@
             enemy.blocking = false;
             enemy.blockStun = 0;
             enemy.aiTimer = 0;
+            enemy.bloodLevel = 0;
 
             comboCount = 0;
             comboTimer = 0;
@@ -823,15 +798,12 @@
 
         window.restartGame = restartGame;
 
-        // Game loop
         function gameLoop() {
-            // Handle input
             if (gameRunning && !player.attacking && !player.recovering && !player.blocking) {
                 if (keys['a']) player.vx = -3;
                 if (keys['d']) player.vx = 3;
             }
 
-            // Update
             if (gameRunning) {
                 if (freezeFrame > 0) {
                     freezeFrame--;
@@ -845,19 +817,11 @@
                             particles.splice(i, 1);
                         }
                     }
-
-                    for (let i = bloodSplatters.length - 1; i >= 0; i--) {
-                        bloodSplatters[i].update();
-                        if (bloodSplatters[i].life <= 0) {
-                            bloodSplatters.splice(i, 1);
-                        }
-                    }
                 }
 
                 updateUI();
             }
 
-            // Draw
             ctx.save();
 
             if (screenShake > 0) {
@@ -870,7 +834,7 @@
 
             drawBackground();
 
-            // Draw blood splatters
+            // Draw ALL blood splatters (they never disappear!)
             bloodSplatters.forEach(b => b.draw());
 
             player.draw();
